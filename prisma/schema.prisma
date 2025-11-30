@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserProfile {
+  id           String   @id @default(cuid())
+  clerkUserId  String   @unique
+  displayName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  totalXP      Int      @default(0)
+  level        Int      @default(1)
+
+  quests       UserQuest[]
+  badges       UserBadge[]
+  xpEvents     XPEvent[]
+  lifeEvents   LifeEvent[]
+  formAnswers  UserFormAnswers[]
+  journeys     UserJourney[]
+}
+
+model Quest {
+  id            String   @id
+  title         String
+  description   String
+  theme         String
+  xp            Int
+  prerequisites String[]
+  trigger       Json?
+
+  users         UserQuest[]
+}
+
+model UserQuest {
+  id         String     @id @default(cuid())
+  userId     String
+  questId    String
+  status     QuestStatus @default(NOT_STARTED)
+  completedAt DateTime?
+
+  user       UserProfile @relation(fields: [userId], references: [id])
+  quest      Quest       @relation(fields: [questId], references: [id])
+}
+
+enum QuestStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model Badge {
+  id          String  @id
+  name        String
+  description String
+  category    String
+  rarity      Rarity
+  xp          Int
+  condition   Json?
+  icon        String  @default("trophy")
+
+  users       UserBadge[]
+}
+
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  SECRET
+}
+
+model UserBadge {
+  id         String   @id @default(cuid())
+  userId     String
+  badgeId    String
+  unlockedAt DateTime @default(now())
+
+  user       UserProfile @relation(fields: [userId], references: [id])
+  badge      Badge       @relation(fields: [badgeId], references: [id])
+
+  @@unique([userId, badgeId])
+}
+
+model XPEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  user      UserProfile @relation(fields: [userId], references: [id])
+}
+
+model LifeEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  label      String
+  category   String
+  occurredAt DateTime
+
+  user       UserProfile @relation(fields: [userId], references: [id])
+}
+
+model UserFormAnswers {
+  id        String   @id @default(cuid())
+  userId    String
+  stepId    String
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  user      UserProfile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, stepId])
+}
+
+model SkillNode {
+  id          String   @id
+  label       String
+  theme       String
+  questIds    String[]
+  
+  // Self-relation for edges could be modeled explicitly or just visually
+  // Using explicit Edge model for React Flow
+}
+
+model SkillEdge {
+  id         String @id
+  fromNodeId String
+  toNodeId   String
+}
+
+model Journey {
+  id           String   @id
+  title        String
+  description  String
+  triggers     Json[]   // Array of conditions
+  steps        String[] // Array of Quest IDs
+  rewardXp     Int
+  rewardBadges String[] // Array of Badge IDs
+
+  users        UserJourney[]
+}
+
+model UserJourney {
+  id          String      @id @default(cuid())
+  userId      String
+  journeyId   String
+  status      QuestStatus @default(NOT_STARTED)
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+
+  user        UserProfile @relation(fields: [userId], references: [id])
+  journey     Journey     @relation(fields: [journeyId], references: [id])
+
+  @@unique([userId, journeyId])
+}

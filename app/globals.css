@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Main Palette */
+    --primary: #4A90E2;
+    --primary-foreground: 0 0% 100%; /* White */
+    
+    --secondary: #2CC9C2;
+    --secondary-foreground: 0 0% 100%;
+
+    --accent: #7BE495;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --warning: #FFC772;
+    --danger: #F57373;
+    
+    --background: #F8FBFF;
+    --foreground: #0f172a;
+
+    --surface: #FFFFFF;
+
+    /* Shadcn UI mappings */
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+ 
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+ 
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+ 
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+ 
+    --radius: 0.5rem;
+  }
+ 
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+ 
+    /* Adjust these for dark mode later if needed, keeping light mode focus for now as per prompt colors */
+  }
+}
+ 
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
