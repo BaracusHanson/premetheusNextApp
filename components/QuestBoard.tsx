@@ -7,18 +7,22 @@ import { motion } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface QuestBoardProps {
+  inProgressQuests?: QuestDefinition[]; // Optional for backward compatibility if needed
   availableQuests: QuestDefinition[];
   lockedQuests: QuestDefinition[];
   completedQuests: QuestDefinition[];
   highlightId?: string;
 }
 
-export function QuestBoard({ availableQuests, lockedQuests, completedQuests, highlightId }: QuestBoardProps) {
+export function QuestBoard({ inProgressQuests = [], availableQuests, lockedQuests, completedQuests, highlightId }: QuestBoardProps) {
   // Determine default tab based on highlightId
   let defaultTab = "available";
   if (highlightId) {
       if (lockedQuests.some(q => q.id === highlightId)) defaultTab = "locked";
       else if (completedQuests.some(q => q.id === highlightId)) defaultTab = "completed";
+      else if (inProgressQuests.some(q => q.id === highlightId)) defaultTab = "in_progress";
+  } else if (inProgressQuests.length > 0) {
+      defaultTab = "in_progress";
   }
 
   const getCardStyle = (questId: string) => {
@@ -30,11 +34,31 @@ export function QuestBoard({ availableQuests, lockedQuests, completedQuests, hig
 
   return (
     <Tabs defaultValue={defaultTab} className="w-full">
-      <TabsList className="grid w-full grid-cols-3 max-w-[400px]">
+      <TabsList className="grid w-full grid-cols-4 max-w-[600px]">
+        <TabsTrigger value="in_progress">En cours ({inProgressQuests.length})</TabsTrigger>
         <TabsTrigger value="available">Disponibles ({availableQuests.length})</TabsTrigger>
         <TabsTrigger value="locked">Verrouillées ({lockedQuests.length})</TabsTrigger>
         <TabsTrigger value="completed">Terminées ({completedQuests.length})</TabsTrigger>
       </TabsList>
+
+      <TabsContent value="in_progress" className="mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {inProgressQuests.map((quest, index) => (
+            <motion.div
+              key={quest.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              id={`quest-${quest.id}`}
+            >
+              <QuestCard quest={quest} className={getCardStyle(quest.id)} />
+            </motion.div>
+          ))}
+          {inProgressQuests.length === 0 && (
+              <p className="text-muted-foreground py-8">Aucune quête en cours.</p>
+          )}
+        </div>
+      </TabsContent>
 
       <TabsContent value="available" className="mt-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

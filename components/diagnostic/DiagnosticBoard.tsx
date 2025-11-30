@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { DIAGNOSTIC_SCHEMA, DiagnosticSectionDef } from "@/lib/diagnostic-schema";
+import { useState, useCallback, useEffect } from "react";
+import { formSteps, FormStep } from "@/lib/formSteps";
 import { DiagnosticItem } from "./DiagnosticItem";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
-import { QuestCompletionModal } from "@/components/QuestCompletionModal";
+import { AlertCircle, CheckCircle2, Save } from "lucide-react";
+import { CelebrationModal, CelebrationItem } from "@/components/CelebrationModal";
+import { Button } from "@/components/ui/button";
+import { useSearchParams } from "next/navigation";
 
 interface DiagnosticBoardProps {
   initialAnswers: Record<string, any>; // Flattened answers
@@ -14,58 +16,76 @@ interface DiagnosticBoardProps {
 }
 
 export function DiagnosticBoard({ initialAnswers, defaultTab }: DiagnosticBoardProps) {
+  const searchParams = useSearchParams();
+  const focusField = searchParams.get('focus');
+
   const [answers, setAnswers] = useState<Record<string, any>>(initialAnswers);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
-  const [completedQuest, setCompletedQuest] = useState<any>(null);
+  const [celebrationQueue, setCelebrationQueue] = useState<CelebrationItem[]>([]);
 
-  const handleItemChange = useCallback(async (fieldId: string, value: any, date?: string) => {
+  // Validate defaultTab
+  const validTab = formSteps.find(s => s.id === defaultTab) ? defaultTab : formSteps[0].id;
+
+  // Auto-scroll to focused field on mount
+  useEffect(() => {
+      if (focusField) {
+          const element = document.getElementById(`field-${focusField}`);
+          if (element) {
+              // Small timeout to allow rendering
+              setTimeout(() => {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  // Optional: Add a highlight flash
+                  element.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+                  setTimeout(() => element.classList.remove('ring-2', 'ring-primary', 'ring-offset-2'), 2000);
+              }, 300);
+          }
+      }
+  }, [focusField, validTab]);
+
+  // Helper to find stepId for a given fieldId
+  const findStepIdForField = (fieldId: string): string => {
+      for (const step of formSteps) {
+          // Check top level questions
+          const q = step.questions.find(q => q.id === fieldId);
+          if (q) return step.id;
+          
+          // Check sub-questions
+          for (const question of step.questions) {
+              if (question.subQuestions) {
+                  const sub = question.subQuestions.find(s => s.id === fieldId);
+                  if (sub) return step.id;
+              }
+          }
+      }
+      return "general";
+  };
+
+  const handleItemChange = useCallback(async (fieldId: string, value: any) => {
     // Update local state immediately
     const newAnswers = { ...answers, [fieldId]: value };
-    if (date !== undefined) {
-      newAnswers[`${fieldId}_date`] = date;
-    }
     setAnswers(newAnswers);
 
-    // Find which step this belongs to
-    let stepId = "general";
-    for (const section of DIAGNOSTIC_SCHEMA) {
-        const item = section.items.find(i => i.id === fieldId);
-        if (item) {
-            stepId = item.stepId;
-            break;
-        }
-    }
+    // Find step
+    const stepId = findStepIdForField(fieldId);
+    const step = formSteps.find(s => s.id === stepId);
+
+    if (!step) return;
 
     // Prepare data for this step
     const stepData: Record<string, any> = {};
-    // We need to find ALL items that belong to this step to preserve them
-    // Or we trust that the backend merges? No, backend replaces.
-    // So we must gather all known answers for this step from our 'answers' state.
-    // But wait, 'answers' state might be incomplete if we only loaded some steps?
-    // We should assume 'initialAnswers' loaded EVERYTHING.
     
-    // Find all fields for this step from schema
-    const fieldsInStep: string[] = [];
-    DIAGNOSTIC_SCHEMA.forEach(section => {
-        section.items.forEach(item => {
-            if (item.stepId === stepId) {
-                fieldsInStep.push(item.id);
-                // Also include date fields
-                fieldsInStep.push(`${item.id}_date`);
-            }
+    const collectFields = (questions: any[]) => {
+        questions.forEach(q => {
+            if (newAnswers[q.id] !== undefined) stepData[q.id] = newAnswers[q.id];
+            if (q.subQuestions) collectFields(q.subQuestions);
         });
-    });
+    };
+    
+    collectFields(step.questions);
 
-    fieldsInStep.forEach(key => {
-        if (newAnswers[key] !== undefined) {
-            stepData[key] = newAnswers[key];
-        }
-    });
-
-    // Trigger save
     setSaving(prev => ({ ...prev, [stepId]: true }));
     try {
-        const res = await fetch('/form/api/save', { // Corrected path
+        const res = await fetch('/form/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ stepId, answers: stepData })
@@ -74,10 +94,36 @@ export function DiagnosticBoard({ initialAnswers, defaultTab }: DiagnosticBoardP
         if (!res.ok) throw new Error("Save failed");
         
         const data = await res.json();
+        
+        // Process Gamification Rewards
+        const newItems: CelebrationItem[] = [];
+
         if (data.newQuests && data.newQuests.length > 0) {
-            // Show the first completed quest
-            setCompletedQuest(data.newQuests[0]);
+            data.newQuests.forEach((q: any) => {
+                newItems.push({
+                    type: 'QUEST',
+                    title: q.title,
+                    subtitle: 'Quête Complétée',
+                    xp: q.xp
+                });
+            });
         }
+
+        if (data.newBadges && data.newBadges.length > 0) {
+            data.newBadges.forEach((b: any) => {
+                newItems.push({
+                    type: 'BADGE',
+                    title: b.name, // Assuming backend returns badge details
+                    subtitle: 'Badge Débloqué',
+                    xp: b.xp
+                });
+            });
+        }
+
+        if (newItems.length > 0) {
+            setCelebrationQueue(prev => [...prev, ...newItems]);
+        }
+
     } catch (err) {
         console.error(err);
     } finally {
@@ -86,7 +132,7 @@ export function DiagnosticBoard({ initialAnswers, defaultTab }: DiagnosticBoardP
   }, [answers]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-8">
+    <div className="w-full max-w-5xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <div>
             <h2 className="text-2xl font-bold tracking-tight">Votre Inventaire</h2>
@@ -94,46 +140,51 @@ export function DiagnosticBoard({ initialAnswers, defaultTab }: DiagnosticBoardP
         </div>
       </div>
 
-      <Tabs defaultValue={defaultTab || DIAGNOSTIC_SCHEMA[0].id} className="w-full">
+      <Tabs defaultValue={validTab} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto h-auto p-2 gap-2 bg-transparent">
-            {DIAGNOSTIC_SCHEMA.map(section => (
+            {formSteps.map(step => (
                 <TabsTrigger 
-                    key={section.id} 
-                    value={section.id}
-                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border px-4 py-2 rounded-full"
+                    key={step.id} 
+                    value={step.id}
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border px-4 py-2 rounded-full shadow-sm bg-card whitespace-nowrap"
                 >
-                    {section.title}
+                    {step.title}
                 </TabsTrigger>
             ))}
         </TabsList>
 
-        {DIAGNOSTIC_SCHEMA.map(section => (
-            <TabsContent key={section.id} value={section.id} className="mt-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>{section.title}</CardTitle>
-                        <CardDescription>{section.description}</CardDescription>
+        {formSteps.map(step => (
+            <TabsContent key={step.id} value={step.id} className="mt-6 animate-in fade-in-50">
+                <Card className="border-none shadow-none bg-transparent">
+                    <CardHeader className="px-0 pt-0">
+                        <CardTitle className="text-2xl">{step.title}</CardTitle>
+                        <CardDescription className="text-lg">{step.description}</CardDescription>
                     </CardHeader>
-                    <CardContent className="grid gap-6 md:grid-cols-2">
-                        {section.items.map(item => (
-                            <DiagnosticItem
-                                key={item.id}
-                                item={item}
-                                value={answers[item.id]}
-                                dateValue={answers[`${item.id}_date`]}
-                                onChange={(val, date) => handleItemChange(item.id, val, date)}
-                            />
-                        ))}
+                    <CardContent className="px-0">
+                        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+                            {step.questions.map(question => (
+                                <DiagnosticItem
+                                    key={question.id}
+                                    question={question}
+                                    answers={answers}
+                                    onChange={handleItemChange}
+                                />
+                            ))}
+                        </div>
+                        <div className="mt-8 flex justify-end">
+                             {saving[step.id] && <span className="text-sm text-muted-foreground flex items-center gap-2 animate-pulse"><Save className="w-4 h-4" /> Sauvegarde...</span>}
+                        </div>
                     </CardContent>
                 </Card>
             </TabsContent>
         ))}
       </Tabs>
 
-      <QuestCompletionModal 
-        quest={completedQuest} 
-        onClose={() => setCompletedQuest(null)} 
+      <CelebrationModal 
+        queue={celebrationQueue} 
+        onClose={() => setCelebrationQueue([])} 
       />
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
 import { checkBadges } from "./badgeEngine";
 import { checkQuests, completeQuest } from "./questEngine";
-import { checkJourneys } from "./journeyEngine";
+import { checkJourneys, checkJourneyCompletion } from "./journeyEngine";
 import { formTriggers } from "@/prisma/data/formTriggers";
 
 export async function checkFormProgress(userId: string, stepId: string, currentAnswers: any) {
@@ -64,7 +64,12 @@ export async function checkFormProgress(userId: string, stepId: string, currentA
     }
 
     // 2. Check generic badges (DB scan)
-    const newBadges = await checkBadges(userId);
+    const genericBadges = await checkBadges(userId);
+
+    // 3. Check Journey Completion (Retroactive & Real-time)
+    const journeyBadges = await checkJourneyCompletion(userId);
     
+    const newBadges = [...genericBadges, ...journeyBadges];
+
     return { newQuests, newBadges };
 }

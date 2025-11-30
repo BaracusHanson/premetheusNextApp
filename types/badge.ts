@@ -8,7 +8,7 @@ export type BadgeDefinition = {
   rarity: "COMMON" | "RARE" | "EPIC" | "SECRET" | "common" | "rare" | "epic" | "secret";
   xp: number;
   icon?: string;
-  condition?: (user: UserProfile & { badges: UserBadge[] }) => boolean;
+  condition?: ((user: UserProfile & { badges: UserBadge[] }) => boolean) | any;
 };
 
 export type Badge = BadgeDefinition;

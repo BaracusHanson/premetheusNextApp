@@ -1,25 +1,27 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { calculateStreak } from "@/lib/xpEngine";
+import { xpToNextLevel } from "@/lib/xp";
+import { getUserRadarStats, getUserActivityHistory, getUserGlobalAura } from "@/lib/stats";
 import Link from "next/link";
-import { ArrowRight, Trophy, Activity, BarChart3 } from "lucide-react";
+import { ArrowRight, Trophy, Activity, BarChart3, Compass, CalendarDays } from "lucide-react";
 import { LevelCard } from "@/components/LevelCard";
-import { XPBar } from "@/components/XPBar";
 import { QuestCard } from "@/components/QuestCard";
-import { BadgeList } from "@/components/BadgeList"; // Refactored client component for list
-import { JourneyCard } from "@/components/JourneyCard";
+import { BadgeList } from "@/components/BadgeList"; 
 import { QuestStatus } from "@prisma/client";
-import { InfoTooltip } from "@/components/InfoTooltip";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Map } from "lucide-react";
+import { StatsRadar } from "@/components/StatsRadar";
+import { StatsTimeline } from "@/components/StatsTimeline";
+import { AuraOrb } from "@/components/AuraOrb";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 export default async function DashboardPage() {
   const { userId } = auth();
   if (!userId) redirect("/auth/sign-in");
 
-  const user = await prisma.userProfile.findUnique({
+  let user = await prisma.userProfile.findUnique({
     where: { clerkUserId: userId },
     include: {
       quests: { include: { quest: true } },
@@ -28,38 +30,31 @@ export default async function DashboardPage() {
     },
   });
 
-  if (!user) redirect("/auth/sign-in"); // Should handle creation if missing, but middleware protects
+  if (!user) redirect("/auth/sign-in");
+
+  // Sync Name from Clerk if default
+  const clerkUser = await currentUser();
+  const fullName = clerkUser ? 
+      (clerkUser.firstName ? `${clerkUser.firstName} ${clerkUser.lastName || ''}`.trim() : clerkUser.username) 
+      : null;
+
+  if (user.displayName === "Nouvel Utilisateur" && fullName) {
+      user = await prisma.userProfile.update({
+          where: { id: user.id },
+          data: { displayName: fullName },
+          include: {
+            quests: { include: { quest: true } },
+            badges: { include: { badge: true } },
+            journeys: { include: { journey: true } },
+          },
+      });
+  }
 
   const streak = await calculateStreak(user.id);
-
-  // Fetch all available journeys
-  const allJourneys = await prisma.journey.findMany();
-
-  // Calculate Journey Progress for ALL journeys
-  const journeysWithProgress = allJourneys.map(journey => {
-    // Check if user has started this journey
-    const userJourney = user.journeys.find(uj => uj.journeyId === journey.id);
-    
-    const totalSteps = journey.steps.length;
-    const completedSteps = journey.steps.filter((stepId: string) => 
-      user.quests.some(uq => uq.questId === stepId && uq.status === 'COMPLETED')
-    ).length;
-    const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
-
-    // Return composite object matching the expected prop type
-    return {
-      id: userJourney?.id || `virtual-${journey.id}`,
-      userId: user.id,
-      journeyId: journey.id,
-      status: userJourney?.status || QuestStatus.NOT_STARTED,
-      startedAt: userJourney?.startedAt || new Date(), // or null if allowed, but type expects Date
-      completedAt: userJourney?.completedAt || null,
-      journey: journey,
-      progress,
-      totalSteps,
-      completedSteps
-    };
-  });
+  const nextLevelXP = xpToNextLevel(user.level);
+  const radarData = await getUserRadarStats(user.id);
+  const activityData = await getUserActivityHistory(user.id);
+  const globalAura = await getUserGlobalAura(user.id);
 
   // 1. Get In Progress Quest or Next Available
   let currentQuestData = null;
@@ -88,7 +83,7 @@ export default async function DashboardPage() {
   }
   
   // Map DB Quest to UI Quest Type if needed, or just pass data
-  const currentQuest: QuestDefinition | null = currentQuestData ? {
+  const currentQuest: any = currentQuestData ? {
       ...currentQuestData,
       prerequisites: currentQuestData.prerequisites as string[], 
       status: questStatus
@@ -135,14 +130,14 @@ export default async function DashboardPage() {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row gap-6">
         <div className="w-full md:w-1/3">
-          <LevelCard level={user.level} xp={user.totalXP} />
+          <LevelCard level={user.level} currentXP={user.totalXP} nextLevelXP={nextLevelXP} />
         </div>
-        <div className="w-full md:w-2/3 flex flex-col justify-center space-y-6 bg-gradient-to-br from-surface to-primary/5 p-8 rounded-2xl border shadow-sm relative overflow-hidden">
+        <div className="w-full md:w-2/3 flex flex-col justify-center space-y-6 bg-gradient-to-br from-background to-primary/5 p-8 rounded-2xl border shadow-sm relative overflow-hidden">
            {/* Background Decor */}
            <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-primary/10 rounded-full blur-3xl"></div>
           
           <div className="relative z-10">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-center mb-6">
                <div>
                  <h2 className="text-4xl font-heading font-extrabold mb-2 tracking-tight">
                     {greeting}, <span className="text-primary">{user.displayName || "Voyageur"}</span>.
@@ -151,24 +146,22 @@ export default async function DashboardPage() {
                     {subtext}
                  </p>
                </div>
-               <Link href="/stats">
-                 <Button variant="outline" size="icon" className="rounded-full h-10 w-10 bg-background/50 hover:bg-background">
-                   <BarChart3 className="h-5 w-5" />
-                 </Button>
-               </Link>
+               <div className="hidden sm:block">
+                   <AuraOrb aura={globalAura} />
+               </div>
             </div>
           </div>
-          <XPBar xp={user.totalXP} />
+          
           <div className="grid grid-cols-3 gap-4 text-center relative z-10">
-            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm">
+            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm hover:shadow-md transition-shadow">
                <div className="text-2xl font-bold text-primary">{user.quests.filter(q => q.status === 'COMPLETED').length}</div>
                <div className="text-xs text-muted-foreground uppercase font-medium tracking-wider">Quêtes</div>
             </div>
-            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm">
+            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm hover:shadow-md transition-shadow">
                <div className="text-2xl font-bold text-secondary">{user.badges.length}</div>
                <div className="text-xs text-muted-foreground uppercase font-medium tracking-wider">Badges</div>
             </div>
-            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm">
+            <div className="p-3 bg-background/80 backdrop-blur-sm rounded-xl border shadow-sm hover:shadow-md transition-shadow">
                <div className="text-2xl font-bold text-accent">{streak}</div>
                <div className="text-xs text-muted-foreground uppercase font-medium tracking-wider">Série</div>
             </div>
@@ -177,58 +170,110 @@ export default async function DashboardPage() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Current Quest */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-heading font-bold flex items-center gap-2">
-                <Activity className="h-5 w-5 text-primary" />
-                Quête en cours
-            </h3>
-            <Link href="/quests" className="text-sm text-primary hover:underline flex items-center">
-                Voir tout <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </div>
-          {currentQuest ? (
-              <QuestCard quest={currentQuest} />
-          ) : (
-              <div className="p-6 bg-surface border rounded-xl text-center text-muted-foreground">
-                  Aucune quête en cours. Vérifiez le tableau des quêtes !
-              </div>
-          )}
+        {/* Left Column: Quest & Journey CTA (8 cols) */}
+        <div className="lg:col-span-7 space-y-8">
+            {/* Current Quest */}
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-heading font-bold flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-primary" />
+                        Quête en cours
+                    </h3>
+                    <Link href="/quests" className="text-sm text-primary hover:underline flex items-center">
+                        Voir tout <ArrowRight className="ml-1 h-4 w-4" />
+                    </Link>
+                </div>
+                {currentQuest ? (
+                    <QuestCard quest={currentQuest} className="min-h-[200px]" />
+                ) : (
+                    <div className="p-8 bg-muted/20 border rounded-xl text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
+                        <Map className="w-10 h-10 mb-2 text-muted-foreground/50" />
+                        Aucune quête en cours. Vérifiez le tableau des quêtes !
+                    </div>
+                )}
+            </div>
+
+             {/* Journey CTA */}
+             <Card className="bg-gradient-to-r from-slate-900 to-slate-800 text-white overflow-hidden relative border-none shadow-lg">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl translate-x-1/3 -translate-y-1/2"></div>
+                <CardHeader className="relative z-10">
+                    <CardTitle className="flex items-center gap-2 text-xl">
+                        <Compass className="w-6 h-6 text-yellow-400" />
+                        Parcours de Vie
+                    </CardTitle>
+                    <CardDescription className="text-slate-300">
+                        Donnez une direction à votre évolution. Choisissez un parcours thématique.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="relative z-10">
+                     <Button variant="secondary" className="w-full sm:w-auto font-semibold" asChild>
+                        <Link href="/journeys">
+                            Explorer les Parcours <ArrowRight className="ml-2 w-4 h-4" />
+                        </Link>
+                     </Button>
+                </CardContent>
+             </Card>
+
+             {/* Activity Heatmap */}
+             <div className="space-y-4">
+                <h3 className="text-xl font-heading font-bold flex items-center gap-2">
+                    <CalendarDays className="h-5 w-5 text-green-500" />
+                    Historique d'Activité
+                </h3>
+                <Card className="overflow-hidden">
+                    <CardContent className="p-6 flex justify-center">
+                        <StatsTimeline data={activityData} />
+                    </CardContent>
+                </Card>
+             </div>
         </div>
 
-        {/* Recent Badges */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-heading font-bold flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-warning" />
-                Badges Récents
-            </h3>
-            <Link href="/badges" className="text-sm text-primary hover:underline flex items-center">
-                Collection <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </div>
-          
-          <BadgeList badges={displayBadges} />
+        {/* Right Column: Stats & Badges (4 cols) */}
+        <div className="lg:col-span-5 space-y-8">
+            {/* Stats Radar */}
+            <div className="space-y-4">
+                <h3 className="text-xl font-heading font-bold flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-blue-500" />
+                    Équilibre
+                </h3>
+                <Card className="overflow-hidden">
+                    <CardContent className="p-0 flex justify-center items-center bg-card/50">
+                        <div className="h-[350px] w-full p-4">
+                             <StatsRadar data={radarData} />
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+             {/* Recent Badges (Compact) */}
+             <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-heading font-bold flex items-center gap-2">
+                        <Trophy className="h-5 w-5 text-warning" />
+                        Badges
+                    </h3>
+                    <Link href="/badges" className="text-sm text-primary hover:underline">
+                        Tous
+                    </Link>
+                </div>
+                <div className="space-y-3">
+                    {displayBadges.slice(0, 3).map((item, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 bg-card border rounded-xl shadow-sm">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.isUnlocked ? 'bg-yellow-100 text-yellow-600' : 'bg-muted text-muted-foreground'}`}>
+                                <Trophy className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm truncate">{item.badge.name}</div>
+                                <div className="text-xs text-muted-foreground truncate">{item.badge.category}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
       </div>
-
-      {/* Journeys Section */}
-      {journeysWithProgress.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-xl font-heading font-bold flex items-center gap-2">
-            <Map className="h-5 w-5 text-primary" />
-            Parcours
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {journeysWithProgress.map((uj: any) => (
-              <JourneyCard key={uj.id} userJourney={uj} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

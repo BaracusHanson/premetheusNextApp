@@ -1,63 +1,107 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { ArrowLeft, ArrowRight, CheckCircle2, Lock, MapPin, Star, Trophy, Circle, PlayCircle } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { 
+  ArrowLeft, 
+  CheckCircle2, 
+  Lock, 
+  MapPin, 
+  Trophy, 
+  Star, 
+  PlayCircle,
+  ArrowRight 
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { QuestStatus } from "@prisma/client";
+import { Progress } from "@/components/ui/progress";
 
-export default async function JourneyDetailsPage({ params }: { params: { journeyId: string } }) {
+interface JourneyDetailPageProps {
+  params: {
+    journeyId: string;
+  };
+}
+
+const THEME_MAP: Record<string, string> = {
+  // V2 Themes (Matches quests.ts) mapped to ACTUAL formSteps IDs
+  "Identité & Origines": "general",       // formSteps[0].id
+  "Savoir & Formation": "education",      // formSteps[1].id
+  "Carrière & Impact": "work",            // formSteps[2].id
+  "Style de Vie": "adulting",             // formSteps[3].id
+  "Croissance & Futur": "resilience_vision", // formSteps[4].id
+
+  // Fallbacks
+  "Identity": "general",
+  "Knowledge": "education",
+  "Career": "work",
+  "Lifestyle": "adulting",
+  "Growth": "resilience_vision"
+};
+
+export default async function JourneyDetailPage({ params }: JourneyDetailPageProps) {
   const { userId } = auth();
   if (!userId) redirect("/auth/sign-in");
 
-  const { journeyId } = params;
-
-  // 1. Fetch Journey Details
-  const journey = await prisma.journey.findUnique({
-    where: { id: journeyId },
-  });
-
-  if (!journey) {
-    return <div>Parcours introuvable.</div>;
-  }
-
-  // 2. Fetch User Profile for quest status checking
   const user = await prisma.userProfile.findUnique({
     where: { clerkUserId: userId },
     include: {
-      quests: true,
-      journeys: true,
-    }
+      quests: { include: { quest: true } },
+      badges: { include: { badge: true } },
+      journeys: { include: { journey: true } },
+    },
   });
 
   if (!user) redirect("/auth/sign-in");
 
-  // 3. Fetch Quests involved in this journey
-  // We need to preserve the order of steps defined in journey.steps
-  const quests = await prisma.quest.findMany({
+  // Fetch Journey Definition
+  const journeyDef = await prisma.journey.findUnique({
+    where: { id: params.journeyId },
+  });
+
+  if (!journeyDef) {
+    return <div className="p-8 text-center">Parcours introuvable.</div>;
+  }
+
+  // Fetch Quests involved in this journey
+  const journeyQuests = await prisma.quest.findMany({
     where: {
-      id: { in: journey.steps }
+      id: { in: journeyDef.steps as string[] }
     }
   });
 
-  // Sort quests based on the order in journey.steps
-  const sortedQuests = journey.steps.map(stepId => quests.find(q => q.id === stepId)).filter(Boolean);
+  // Collect all prerequisite IDs to fetch their titles
+  const allPrereqIds = new Set<string>();
+  journeyQuests.forEach(q => {
+      if (Array.isArray(q.prerequisites)) {
+          q.prerequisites.forEach((id: string) => allPrereqIds.add(id));
+      }
+  });
 
-  // 4. Determine Statuses
-  const userJourney = user.journeys.find(uj => uj.journeyId === journeyId);
+  const prereqQuests = await prisma.quest.findMany({
+      where: { id: { in: Array.from(allPrereqIds) } },
+      select: { id: true, title: true }
+  });
+  
+  const prereqMap = new Map(prereqQuests.map(q => [q.id, q.title]));
+
+  // Sort quests based on the order in journey.steps
+  const sortedQuests = (journeyDef.steps as string[])
+    .map(stepId => journeyQuests.find(q => q.id === stepId))
+    .filter((q): q is NonNullable<typeof q> => !!q);
+
+  // Determine Statuses
+  const userJourney = user.journeys.find(uj => uj.journeyId === params.journeyId);
   const completedQuestIds = new Set(user.quests.filter(q => q.status === 'COMPLETED').map(q => q.questId));
   
   // Calculate Stats
-  const totalSteps = journey.steps.length;
-  const completedStepsCount = journey.steps.filter(id => completedQuestIds.has(id)).length;
+  const totalSteps = journeyDef.steps.length;
+  const completedStepsCount = (journeyDef.steps as string[]).filter(id => completedQuestIds.has(id)).length;
   const progress = totalSteps > 0 ? (completedStepsCount / totalSteps) * 100 : 0;
 
   // Fetch Reward Badges details if any
   const rewardBadges = await prisma.badge.findMany({
-    where: { id: { in: journey.rewardBadges } }
+    where: { id: { in: journeyDef.rewardBadges as string[] } }
   });
 
   return (
@@ -74,10 +118,10 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
           <div className="space-y-2">
             <h1 className="text-3xl font-heading font-bold text-primary flex items-center gap-3">
               <MapPin className="h-8 w-8" />
-              {journey.title}
+              {journeyDef.title}
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl">
-              {journey.description}
+              {journeyDef.description}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -88,7 +132,7 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
         </div>
 
         {/* Global Stats Card */}
-        <Card className="bg-surface/50 border-primary/20">
+        <Card className="bg-card/50 border-primary/20">
           <CardContent className="pt-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="space-y-1">
@@ -108,7 +152,7 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
                 <span className="text-xs uppercase text-muted-foreground font-bold">Récompense XP</span>
                 <div className="flex items-center gap-1 text-2xl font-bold text-yellow-500">
                   <Star className="h-5 w-5 fill-current" />
-                  {journey.rewardXp}
+                  {journeyDef.rewardXp}
                 </div>
               </div>
               <div className="space-y-1">
@@ -131,16 +175,28 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
           <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-border -z-10" />
 
           {sortedQuests.map((quest, index) => {
-            if (!quest) return null;
-            
             const isCompleted = completedQuestIds.has(quest.id);
-            // A quest is locked if the previous one isn't completed (simple sequential logic for visual, though real logic might be more complex in engine)
-            // For visual simplicity here: if it's not completed and previous wasn't completed, it's locked.
-            // Actually, let's just check if it's "available" based on completion.
-            // Ideally we'd check prerequisites, but for the journey view, usually steps are sequential.
-            // Let's assume sequential for the visual timeline.
-            const isLocked = index > 0 && !completedQuestIds.has(sortedQuests[index - 1]!.id);
+            
+            // Check Prerequisites
+            const prerequisites = (quest.prerequisites as string[]) || [];
+            const missingPrereqs = prerequisites.filter(id => !completedQuestIds.has(id));
+            const isPrereqLocked = missingPrereqs.length > 0;
+
+            // Check Sequential Order (previous step must be done)
+            const isSequenceLocked = index > 0 && !completedQuestIds.has(sortedQuests[index - 1]!.id);
+            
+            const isLocked = isPrereqLocked || isSequenceLocked;
             const isNext = !isCompleted && !isLocked;
+
+            // Calculate Start URL
+            const tab = THEME_MAP[quest.theme] || "general";
+            let targetField = null;
+            if (quest.trigger && typeof quest.trigger === 'object' && (quest.trigger as any).field) {
+                targetField = (quest.trigger as any).field;
+            }
+            const startUrl = targetField 
+                ? `/diagnostic?tab=${tab}&focus=${targetField}` 
+                : `/diagnostic?tab=${tab}`;
 
             return (
               <div key={quest.id} className="relative pl-16 py-4 group">
@@ -157,11 +213,14 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
                 </div>
 
                 {/* Card */}
-                <Card className={`transition-all duration-200 hover:shadow-md ${isLocked ? "opacity-60 grayscale" : "border-l-4 border-l-primary"}`}>
+                <Card className={`transition-all duration-200 hover:shadow-md ${isLocked ? "opacity-80" : "border-l-4 border-l-primary"}`}>
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
                       <div>
-                         <CardTitle className="text-lg">{quest.title}</CardTitle>
+                         <CardTitle className="text-lg flex items-center gap-2">
+                             {quest.title}
+                             {isLocked && <Lock className="h-4 w-4 text-muted-foreground" />}
+                         </CardTitle>
                          <CardDescription>{quest.theme}</CardDescription>
                       </div>
                       <div className="flex items-center gap-1 text-sm font-medium text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">
@@ -172,16 +231,38 @@ export default async function JourneyDetailsPage({ params }: { params: { journey
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-4">{quest.description}</p>
                     
+                    {isPrereqLocked && (
+                        <div className="mb-4 p-3 bg-destructive/10 rounded-md text-sm text-destructive">
+                            <p className="font-semibold mb-1">Prérequis manquants :</p>
+                            <ul className="list-disc list-inside">
+                                {missingPrereqs.map(pid => (
+                                    <li key={pid}>
+                                        {prereqMap.get(pid) || pid}
+                                        {/* Link to the prerequisite quest if it's not in this journey? */}
+                                        <Link href={`/quests?focus=${pid}`} className="ml-2 text-xs underline opacity-80 hover:opacity-100">
+                                            Voir
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {!isLocked && !isCompleted && (
-                       <Link href={`/quests?focus=${quest.id}`}>
-                         <Button size="sm" className="gap-2">
-                            Commencer <ArrowRight className="h-4 w-4" />
-                         </Button>
-                       </Link>
+                       <Button size="sm" className="gap-2" asChild>
+                            <Link href={startUrl}>
+                                Commencer <ArrowRight className="h-4 w-4" />
+                            </Link>
+                       </Button>
                     )}
                     {isCompleted && (
                         <div className="text-sm font-medium text-green-600 flex items-center gap-2">
                             <CheckCircle2 className="h-4 w-4" /> Quête complétée
+                        </div>
+                    )}
+                    {isSequenceLocked && !isPrereqLocked && (
+                        <div className="text-sm text-muted-foreground italic">
+                            Terminez l'étape précédente pour débloquer celle-ci.
                         </div>
                     )}
                   </CardContent>

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { addXP } from "@/lib/xpEngine";
+import { checkJourneyCompletion } from "@/lib/journeyEngine";
 
 export async function checkQuests(userId: string) {
     // Placeholder for auto-check logic
@@ -43,6 +44,9 @@ export async function completeQuest(userId: string, questId: string) {
     if (quest.xp > 0) {
         await addXP(userId, quest.xp, `QUEST_COMPLETE:${questId}`);
     }
+
+    // Update Journeys
+    await checkJourneyCompletion(userId);
 
     return quest; // Return the quest object to indicate success
 }

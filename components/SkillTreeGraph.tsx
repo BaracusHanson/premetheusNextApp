@@ -8,66 +8,74 @@ import ReactFlow, {
     Node, 
     NodeProps, 
     Handle, 
-    Position 
+    Position,
+    Edge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useSkillTreeStore } from '@/store/useSkillTreeStore';
 import { cn } from '@/lib/utils';
+import { Lock, Star, Check, Activity } from 'lucide-react';
 
 // Custom Node Component
 const CustomSkillNode = ({ data }: NodeProps) => {
+  // data.label format: "Name\nLvl X"
+  const [label, subLabel] = (data.label || "").split("\n");
+
   return (
     <div className={cn(
-      "px-4 py-2 rounded-md border-2 shadow-sm min-w-[150px] text-center transition-colors",
-      data.status === 'completed' ? "bg-accent/20 border-accent text-accent-foreground" :
-      data.status === 'available' ? "bg-surface border-primary text-primary hover:bg-primary/10 cursor-pointer" :
-      "bg-muted border-muted-foreground/50 text-muted-foreground opacity-80"
+      "relative min-w-[140px] p-3 rounded-xl border-2 shadow-md transition-all duration-300 group bg-card text-card-foreground",
+      data.unlocked ? "border-primary" : "border-muted grayscale opacity-70"
     )}>
-      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-current" />
-      <div className="font-bold text-sm">{data.label}</div>
-      <div className="text-xs opacity-80">{data.description}</div>
-      {data.status === 'locked' && <div className="mt-1 text-[10px] uppercase tracking-wider">Locked</div>}
-      {data.xpCost > 0 && data.status !== 'completed' && (
-          <div className="mt-1 text-[10px] font-mono">{data.xpCost} XP</div>
+      <Handle type="target" position={Position.Top} className="w-2 h-2 !bg-current border-2 border-background" />
+      
+      <div className="flex items-center justify-between mb-2">
+        <div className={cn("p-1.5 rounded-full bg-primary/10 text-primary")}>
+            <Activity className="w-3 h-3" />
+        </div>
+      </div>
+
+      <div className="font-bold text-sm leading-tight text-center">{label}</div>
+      {subLabel && (
+          <div className="text-[10px] text-center text-muted-foreground font-mono mt-1 px-2 py-0.5 bg-muted rounded-full mx-auto w-fit">
+              {subLabel}
+          </div>
       )}
-      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-current" />
+      
+      <Handle type="source" position={Position.Bottom} className="w-2 h-2 !bg-current border-2 border-background" />
     </div>
   );
 };
 
 const nodeTypes = {
   default: CustomSkillNode,
+  input: CustomSkillNode // Handle input type too with same style for simplicity
 };
 
-export function SkillTreeGraph() {
-  const { nodes, edges, onNodesChange, onEdgesChange, unlockNode } = useSkillTreeStore();
+interface SkillTreeGraphProps {
+    nodes: Node[];
+    edges: Edge[];
+}
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-      if (node.data.status === 'available') {
-          // In real app, show confirmation modal to spend XP
-          // For now, just unlock
-          console.log("Unlocking node", node.id);
-          // This should ideally call a store action that checks XP and updates status
-          // unlockNode(node.id); // Commented out to prevent accidental clicks in preview without logic
-      }
-  }, [unlockNode]);
-
+export function SkillTreeGraph({ nodes, edges }: SkillTreeGraphProps) {
   return (
-    <div className="h-[600px] w-full border rounded-xl overflow-hidden bg-slate-50">
+    <div className="h-[600px] w-full border rounded-xl overflow-hidden bg-muted/10 relative">
+      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
-        onNodeClick={onNodeClick}
         fitView
         attributionPosition="bottom-right"
       >
-        <Background color="#ccc" gap={16} />
-        <Controls />
-        <MiniMap style={{ height: 120 }} zoomable pannable />
+        <Background color="hsl(var(--muted-foreground))" gap={20} size={1} style={{ opacity: 0.1 }} />
+        <Controls className="!bg-background !border-border !shadow-sm" />
+        <MiniMap 
+            style={{ height: 100, width: 150 }} 
+            zoomable 
+            pannable 
+            className="!bg-background !border-border !rounded-lg !overflow-hidden"
+        />
       </ReactFlow>
     </div>
   );
 }
+

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { QUESTS, getQuestById } from "@/lib/quests";
 import { addXP } from "@/lib/userProgress";
 import { z } from "zod";
+import { checkJourneyCompletion } from "@/lib/journeyEngine";
 
 export async function GET() {
   try {
@@ -94,6 +95,9 @@ export async function POST(req: Request) {
 
       // Award XP
       await addXP(user.id, questDef.xp, `QUEST_COMPLETE:${questId}`);
+
+      // Check and update Journey progress
+      await checkJourneyCompletion(user.id);
     }
 
     return NextResponse.json(userQuest);

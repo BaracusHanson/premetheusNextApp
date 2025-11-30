@@ -12,32 +12,54 @@ interface StatsRadarProps {
 
 export function StatsRadar({ data }: StatsRadarProps) {
   return (
-    <div className="h-[400px] w-full">
+    <div className="h-full w-full">
       <ResponsiveRadar
         data={data}
         keys={['value']}
         indexBy="subject"
-        maxValue="auto"
-        margin={{ top: 70, right: 80, bottom: 40, left: 80 }}
+        maxValue={100} // Normalize to 100 for consistency
+        margin={{ top: 40, right: 80, bottom: 40, left: 80 }}
         curve="linearClosed"
         borderWidth={2}
-        borderColor={{ from: 'color' }}
-        gridLevels={5}
+        borderColor={{ from: 'color', modifiers: [] }}
+        gridLevels={4}
         gridShape="circular"
-        gridLabelOffset={36}
+        gridLabelOffset={24}
         enableDots={true}
-        dotSize={10}
-        dotColor={{ theme: 'background' }}
+        dotSize={8}
+        dotColor="hsl(var(--background))" 
         dotBorderWidth={2}
         dotBorderColor={{ from: 'color' }}
-        enableDotLabel={true}
-        dotLabel="value"
-        dotLabelYOffset={-12}
-        colors={{ scheme: 'nivo' }}
-        fillOpacity={0.25}
-        blendMode="multiply"
+        enableDotLabel={false} // Cleaner look without labels on dots
+        colors={['hsl(var(--primary))']} // Use theme primary color
+        fillOpacity={0.4}
+        blendMode="normal"
         animate={true}
-        motionConfig="wobbly"
+        motionConfig="gentle"
+        theme={{
+            axis: {
+                ticks: {
+                    text: {
+                        fill: "hsl(var(--muted-foreground))",
+                        fontSize: 12,
+                        fontFamily: "var(--font-sans)",
+                        fontWeight: 600
+                    }
+                }
+            },
+            grid: {
+                line: {
+                    stroke: "hsl(var(--border))",
+                    strokeWidth: 1,
+                    strokeDasharray: "4 4"
+                }
+            },
+            dots: {
+                text: {
+                    fill: "hsl(var(--foreground))"
+                }
+            }
+        }}
       />
     </div>
   );

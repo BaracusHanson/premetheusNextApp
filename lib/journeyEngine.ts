@@ -22,13 +22,6 @@ export async function checkJourneys(userId: string, fieldName: string, value: an
         const match = triggers.some(t => t.field === fieldName && (t.value === 'any' || t.value === value));
         
         if (match) {
-             // Unlock journey? 
-             // Journeys might be "unlocked" or just "started".
-             // We don't have a UserJourney model in schema yet?
-             // The prompt didn't explicitly ask for UserJourney model, but "journeys adaptés".
-             // Maybe we just notify or give XP/Badge immediately if it's a "completion" journey?
-             // Or maybe we assign Quests?
-             
              // "steps: questIds". So we probably assign these quests to the user?
              
              // Let's assign the quests in the journey to the user if not present
@@ -48,8 +41,118 @@ export async function checkJourneys(userId: string, fieldName: string, value: an
                  }
              }
              
-             // Maybe notify user?
+             // Create UserJourney if not exists
+             const existingJourney = await prisma.userJourney.findUnique({
+                 where: { userId_journeyId: { userId, journeyId: journey.id } }
+             });
+             
+             if (!existingJourney) {
+                 await prisma.userJourney.create({
+                     data: {
+                         userId,
+                         journeyId: journey.id,
+                         status: 'IN_PROGRESS',
+                         startedAt: new Date()
+                     }
+                 });
+             }
+
              console.log(`Journey ${journey.title} started for user ${userId}`);
         }
     }
+}
+
+export async function checkJourneyCompletion(userId: string) {
+    const user = await prisma.userProfile.findUnique({
+        where: { id: userId },
+        include: { quests: true, journeys: true }
+    });
+
+    if (!user) return [];
+
+    const completedQuestIds = new Set(
+        user.quests.filter(q => q.status === 'COMPLETED').map(q => q.questId)
+    );
+
+    const allJourneys = await prisma.journey.findMany();
+    const newBadges = [];
+
+    for (const journey of allJourneys) {
+        if (journey.steps.length === 0) continue;
+
+        const isComplete = journey.steps.every(stepId => completedQuestIds.has(stepId));
+        const userJourney = user.journeys.find(uj => uj.journeyId === journey.id);
+
+        if (isComplete) {
+            let justCompleted = false;
+
+            if (!userJourney) {
+                // Create as completed
+                 await prisma.userJourney.create({
+                    data: {
+                        userId,
+                        journeyId: journey.id,
+                        status: 'COMPLETED',
+                        completedAt: new Date(),
+                        startedAt: new Date()
+                    }
+                });
+                justCompleted = true;
+            } else if (userJourney.status !== 'COMPLETED') {
+                // Update to completed
+                await prisma.userJourney.update({
+                    where: { id: userJourney.id },
+                    data: {
+                        status: 'COMPLETED',
+                        completedAt: new Date()
+                    }
+                });
+                justCompleted = true;
+            }
+
+            if (justCompleted) {
+                // Award Reward XP
+                if (journey.rewardXp > 0) {
+                    await addXP(userId, journey.rewardXp, `JOURNEY_COMPLETE:${journey.id}`);
+                }
+                // Award Badges
+                if (journey.rewardBadges && Array.isArray(journey.rewardBadges)) {
+                    for (const badgeId of journey.rewardBadges) {
+                        const hasBadge = await prisma.userBadge.findUnique({ where: { userId_badgeId: { userId, badgeId: badgeId as string } } });
+                        if (!hasBadge) {
+                            await prisma.userBadge.create({ data: { userId, badgeId: badgeId as string, unlockedAt: new Date() } });
+                            
+                            // Fetch badge details for return
+                            const badgeDetails = await prisma.badge.findUnique({ where: { id: badgeId as string } });
+                            if (badgeDetails) newBadges.push(badgeDetails);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Check if it should be IN_PROGRESS
+            // ... (rest of logic untouched) ...
+            const hasProgress = journey.steps.some(stepId => completedQuestIds.has(stepId));
+             
+             if (hasProgress) {
+                 if (!userJourney) {
+                     await prisma.userJourney.create({
+                        data: {
+                            userId,
+                            journeyId: journey.id,
+                            status: 'IN_PROGRESS',
+                            startedAt: new Date()
+                        }
+                    });
+                 } else if (userJourney.status === 'NOT_STARTED') {
+                      await prisma.userJourney.update({
+                        where: { id: userJourney.id },
+                        data: { status: 'IN_PROGRESS' }
+                    });
+                 }
+             }
+        }
+    }
+
+    return newBadges;
 }

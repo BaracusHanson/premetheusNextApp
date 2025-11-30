@@ -7,6 +7,7 @@ async function main() {
 
   // Delete in order of dependencies (child first)
   // Dependent tables
+  await prisma.userJourney.deleteMany(); // Added missing table
   await prisma.userQuest.deleteMany();
   await prisma.userBadge.deleteMany();
   await prisma.userFormAnswers.deleteMany();

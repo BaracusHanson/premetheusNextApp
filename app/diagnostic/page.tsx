@@ -2,6 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { DiagnosticBoard } from "@/components/diagnostic/DiagnosticBoard";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 export default async function DiagnosticPage({ searchParams }: { searchParams: { tab?: string } }) {
   const { userId } = auth();
@@ -43,6 +45,12 @@ export default async function DiagnosticPage({ searchParams }: { searchParams: {
 
   return (
     <div className="container mx-auto py-8 space-y-8">
+      {/* Back Navigation */}
+      <Link href="/journeys" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors">
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Retour aux parcours
+      </Link>
+
       <div className="flex flex-col space-y-2">
         <h1 className="text-3xl font-heading font-bold">Diagnostic de Vie</h1>
         <p className="text-muted-foreground">

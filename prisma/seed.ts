@@ -34,7 +34,8 @@ async function main() {
     await prisma.badge.create({ data: b });
   }
 
-  // 4. Insert Skill Nodes
+  // 4. Insert Skill Nodes (DISABLED - Dynamic Generation used instead)
+  /*
   console.log(`🌳 Inserting ${SKILL_NODES.length} Skill Nodes...`);
   for (const n of SKILL_NODES) {
     await prisma.skillNode.create({ data: n });
@@ -46,6 +47,7 @@ async function main() {
       // Ensure nodes exist before creating edge (Self-integrity check)
     await prisma.skillEdge.create({ data: e });
   }
+  */
 
   // 6. Insert Journeys
   console.log(`🚀 Inserting ${JOURNEYS.length} Journeys...`);

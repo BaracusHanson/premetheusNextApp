@@ -1,120 +1,144 @@
 "use client";
 
-import { DiagnosticItemDef } from "@/lib/diagnostic-schema";
+import { FormQuestion, QuestionSubField } from "@/lib/formSteps";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Check, X } from "lucide-react";
-import { useState, useEffect } from "react";
-
-// Fallback for missing Switch/Checkbox
-function SimpleToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (c: boolean) => void }) {
-    return (
-        <button
-            type="button"
-            onClick={() => onCheckedChange(!checked)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-                checked ? "bg-primary" : "bg-input"
-            }`}
-        >
-            <span
-                className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${
-                    checked ? "translate-x-5" : "translate-x-0"
-                }`}
-            />
-        </button>
-    );
-}
+import { cn } from "@/lib/utils";
 
 interface DiagnosticItemProps {
-    item: DiagnosticItemDef;
-    value: any;
-    dateValue?: string;
-    onChange: (value: any, date?: string) => void;
+    question: FormQuestion | QuestionSubField;
+    answers: Record<string, any>;
+    onChange: (fieldId: string, value: any) => void;
+    level?: number;
 }
 
-export function DiagnosticItem({ item, value, dateValue, onChange }: DiagnosticItemProps) {
-    const [localValue, setLocalValue] = useState(value);
-    const [localDate, setLocalDate] = useState(dateValue || "");
+export function DiagnosticItem({ question, answers, onChange, level = 0 }: DiagnosticItemProps) {
+    const value = answers[question.id];
 
-    // Sync local state with prop, but allow local edits
-    useEffect(() => {
-        setLocalValue(value);
-    }, [value]);
+    // Check condition
+    if (question.condition && !question.condition(answers)) {
+        return null;
+    }
 
-    useEffect(() => {
-        setLocalDate(dateValue || "");
-    }, [dateValue]);
-
-    const handleValueChange = (val: any) => {
-        setLocalValue(val);
-        onChange(val, localDate);
+    const handleChange = (val: any) => {
+        onChange(question.id, val);
     };
 
-    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newDate = e.target.value;
-        setLocalDate(newDate);
-        onChange(localValue, newDate);
-    };
-
-    return (
-        <div className="flex flex-col gap-3 p-4 rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="flex items-center justify-between">
-                <Label className="text-base font-medium">{item.label}</Label>
-                {item.type === 'boolean' && (
-                    <SimpleToggle 
-                        checked={localValue === 'true' || localValue === true} 
-                        onCheckedChange={(checked) => handleValueChange(checked ? 'true' : 'false')} 
+    const renderInput = () => {
+        switch (question.type) {
+            case "text":
+                return (
+                    <Input
+                        value={value || ""}
+                        onChange={(e) => handleChange(e.target.value)}
+                        placeholder={question.placeholder}
                     />
-                )}
-            </div>
-
-            <div className="space-y-3">
-                {item.type === 'text' && (
-                    <Input 
-                        value={localValue || ''} 
-                        onChange={(e) => handleValueChange(e.target.value)}
-                        placeholder={item.placeholder}
+                );
+            case "number":
+                return (
+                    <Input
+                        type="number"
+                        value={value || ""}
+                        onChange={(e) => handleChange(e.target.value)}
+                        placeholder={question.placeholder}
                     />
-                )}
-
-                {item.type === 'select' && item.options && (
-                    <Select value={localValue || ''} onValueChange={handleValueChange}>
+                );
+            case "textarea":
+                return (
+                    <Textarea
+                        value={value || ""}
+                        onChange={(e) => handleChange(e.target.value)}
+                        placeholder={question.placeholder}
+                        className="min-h-[100px]"
+                    />
+                );
+            case "select":
+                return (
+                    <Select value={value || ""} onValueChange={handleChange}>
                         <SelectTrigger>
                             <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                            {item.options.map((opt) => (
+                            {question.options?.map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value}>
                                     {opt.label}
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
-                )}
-
-                {item.type === 'date' && (
-                    <Input 
-                        type="date" 
-                        value={localValue || ''} 
-                        onChange={(e) => handleValueChange(e.target.value)} 
+                );
+            case "date":
+                return (
+                    <Input
+                        type="date"
+                        value={value || ""}
+                        onChange={(e) => handleChange(e.target.value)}
                     />
-                )}
+                );
+            case "boolean":
+                // We can use a Switch or a customized toggle
+                // Let's use a nice Yes/No toggle group look-alike using buttons for clarity?
+                // Or a Switch. Let's stick to Switch for simplicity or the previous Toggle.
+                // Actually, for "Yes/No" questions, a Select or two buttons is often clearer than a switch.
+                // Let's use a standard Select for Boolean to avoid ambiguity (Yes/No)
+                return (
+                     <Select value={value ? String(value) : ""} onValueChange={(val) => handleChange(val)}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="-" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="true">Oui</SelectItem>
+                            <SelectItem value="false">Non</SelectItem>
+                        </SelectContent>
+                    </Select>
+                );
+            default:
+                return null;
+        }
+    };
 
-                {/* Conditional Date Input */}
-                {(item.requiresDate || (item.type === 'boolean' && item.requiresDate)) && (localValue === 'true' || localValue === true || (item.type === 'select' && localValue && localValue !== 'none')) && (
-                    <div className="animate-in fade-in slide-in-from-top-2 pt-2">
-                        <Label className="text-xs text-muted-foreground mb-1 block">Date (Optionnel)</Label>
-                        <Input 
-                            type="date" 
-                            value={localDate} 
-                            onChange={handleDateChange}
-                            className="w-full"
-                        />
-                    </div>
+    // Determine styles based on nesting level
+    const containerClass = level === 0 
+        ? "p-6 rounded-xl border bg-card text-card-foreground shadow-sm space-y-4"
+        : "pl-4 border-l-2 border-primary/20 space-y-3 mt-4";
+
+    return (
+        <div className={cn(containerClass, "animate-in fade-in slide-in-from-top-1")}>
+            <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-4">
+                    <Label className={cn("font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", level === 0 ? "text-base" : "text-sm")}>
+                        {question.label}
+                        {question.required && <span className="text-primary ml-1">*</span>}
+                    </Label>
+                </div>
+                {question.helpText && (
+                    <p className="text-[0.8rem] text-muted-foreground">
+                        {question.helpText}
+                    </p>
                 )}
             </div>
+
+            <div className="relative">
+                {renderInput()}
+            </div>
+
+            {/* Render SubQuestions if any */}
+            {'subQuestions' in question && question.subQuestions && question.subQuestions.length > 0 && (
+                <div className="space-y-4 pt-2">
+                    {question.subQuestions.map(subQ => (
+                        <DiagnosticItem 
+                            key={subQ.id} 
+                            question={subQ} 
+                            answers={answers} 
+                            onChange={onChange}
+                            level={level + 1}
+                        />
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
+
